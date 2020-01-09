@@ -1,0 +1,151 @@
+/**
+ * Class is send email to the specified email address with specified email template.
+ *
+ *
+ * @copyright Deloitte NL 2016
+ * @author Shrivaths Kulkarni (shrivkulkarni@deloitte.com)
+ * @author Mahendra Vaddella for salesforce1 functionality(sendEmailSF1)
+ */
+global class emailOperations{
+    
+    public static string result { get; set; }
+    public static string owid {get; set;} 
+    public static string Profileid1{get;set;}
+    public static string Profileid2{get;set;}
+    
+    /**
+    * This method to send the email using SingleEmailMessage
+    *
+    * @param   emailAddress    Email Id of the recipient
+    * @param   emailTemplate    Email template to be used.
+    * @param   whatId    whatId is the id of the record from which merge expresion will pull the value
+    * @return  status of the email sending 
+    */
+   
+  
+  public emailOperations(ApexPages.StandardController controller){ 
+      Id loggedInUserId = UserInfo.getUserId();
+      Profileid1 = [SELECT Id, Name FROM Profile WHERE Name = 'System Administrator' limit 1].id ;
+      Profileid2 = [SELECT Id, Name FROM Profile WHERE Name = 'CusTra' limit 1].id ;
+      string ooid = ApexPages.CurrentPage().getParameters().get('Id');
+      List<Opportunity> opp = [Select Id,OwnerId  from Opportunity where Id =: ooid];
+      for(Opportunity opp1 : opp){ 
+          if(opp1.OwnerId == loggedInUserId ){
+          owid = opp1.OwnerId;
+          }
+      }
+  }
+  
+   @Remoteaction   
+   public Static Void sendEmailSF1(String OpportunityId){   
+   
+      Opportunity opp = [Select Id,E_Mail_responsible_CusTra__c,General_Custra_Email__c, Previous_NO_of_Sales_Or_sent_to_Custra__c,OwnerId  from Opportunity where Id = :OpportunityId];
+      string emailtoAddress = opp.E_Mail_responsible_CusTra__c;       
+      string emailccAddress = opp.General_Custra_Email__c ;
+      string whatId = opp.Id;
+      string emailTemplate = Label.emailOperations_TemplateId;
+      
+      Id loggedInUserId = UserInfo.getUserId();
+      List<Profile> lstProfile2 = [SELECT Id, Name FROM Profile WHERE Id=:userinfo.getProfileId() LIMIT 1];
+      String currentUserprofileName2 = lstProfile2[0].Name;
+      system.debug('currentUserprofileName2' +currentUserprofileName2);
+      
+        
+    
+      if(opp.Previous_NO_of_Sales_Or_sent_to_Custra__c == 0 || opp.Previous_NO_of_Sales_Or_sent_to_Custra__c == Null){
+                opp.Previous_NO_of_Sales_Or_sent_to_Custra__c  = 1;
+              }
+              else{
+                opp.Previous_NO_of_Sales_Or_sent_to_Custra__c  = opp.Previous_NO_of_Sales_Or_sent_to_Custra__c+1;
+              } 
+       
+         update opp; 
+        
+         
+        system.debug('Opp' +OpportunityId);
+        
+        sendEmail(emailtoAddress,emailccAddress,emailTemplate , whatId); 
+      
+     
+    } 
+        
+          webservice static string sendEmail(string emailtoAddress, string emailccAddress, string emailTemplate, string whatId){  
+            Id loggedInUserId = UserInfo.getUserId();
+            List<Profile> lstProfile2 = [SELECT Id, Name FROM Profile WHERE Id=:userinfo.getProfileId() LIMIT 1];
+            String currentUserprofileName2 = lstProfile2[0].Name;
+            system.debug('currentUserprofileName2' +currentUserprofileName2);
+            boolean checkForOwner = true;
+            
+            Opportunity opp = [Select Id,E_Mail_responsible_CusTra__c,General_Custra_Email__c,Owner.Email,Previous_NO_of_Sales_Or_sent_to_Custra__c,OwnerId  from Opportunity where Id = :whatId];
+            List<String> toEmailAddress = New List<String>();
+                    
+                     toEmailAddress.add(opp.Owner.Email);
+                     
+                    
+                    toEmailAddress.add(emailtoAddress);
+                   // Update toEmailAddress;
+                    
+            if(opp.OwnerId != loggedInUserId){
+                // Code updated by TCS for TASK0218582
+              //  if(!currentUserprofileName2.contains('System Administrator') && !currentUserprofileName2.contains('CusTra')){
+                    if(!currentUserprofileName2.contains('System Administrator') && !currentUserprofileName2.contains('CusTra')&& !currentUserprofileName2.contains('System Admin Limited_LKU')){
+                    return 'NotOwner';
+                    system.debug('error' );
+                    result = 'true';
+                    
+                }
+            }
+                        try{
+                            //string emailTemplate = '00X25000000Me2P';
+                            // that will send out a single email to the addresses in the To, CC & BCC list.
+                            Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
+                
+                            // Strings to hold the email addresses to which you are sending the email.
+                          //  String[] toAddresses = new String[] {emailtoAddress};
+                            String[] ccAddresses = new String[] {emailccAddress};
+                
+                            // Assign the addresses for the To and CC lists to the mail object.
+                            mail.setToAddresses(toEmailAddress);
+                            //mail.setToAddresses(emailtoAddress);
+                            mail.setCCAddresses(ccAddresses);
+                
+                            // Specify email template
+                            mail.setTemplateId(emailTemplate);
+                
+                            mail.settargetObjectId(UserInfo.getUserId());
+                            mail.setsaveAsActivity(false);
+                
+                            mail.setWhatId(whatId);
+                
+                            // Send the email you have created.
+                            Savepoint sp = Database.setSavepoint();
+                
+                            Messaging.sendEmail(new Messaging.SingleEmailMessage[] { mail });
+                
+                            Database.rollback(sp);
+                
+                
+                            Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+                
+                            email.setToAddresses(mail.getToAddresses());
+                
+                            email.setCCAddresses(mail.getCCAddresses());
+                
+                            email.setPlainTextBody(mail.getPlainTextBody());
+                
+                            email.setHTMLBody(mail.getHTMLBody());
+                
+                            email.setSubject(mail.getSubject());
+                            
+                            email.setsaveAsActivity(true);
+                            
+                            Messaging.sendEmail(new Messaging.SingleEmailMessage[] { email });
+                            
+                            return 'Success';
+                           // result = 'EmailSent';
+                        }catch(exception ex){
+                            return 'Failure - '+ ex.getMessage();
+                        }
+            
+    }
+}
